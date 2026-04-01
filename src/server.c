@@ -1,10 +1,11 @@
 #include "sys/socket.h"
 #include "netinet/in.h"
 #include "stdio.h"	
-#include <string.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include "transfer.h"
 
-
-#define BUFFER_SZ 1024
 #define LISTEN_BACKLOG 1
 
 int server (int port) {
@@ -33,14 +34,38 @@ int server (int port) {
 		perror("error accepting connection on port");
 		return -1;
 	}
+	close(socket_fd);
 
-	char buffer[BUFFER_SZ];
-	while (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-		    send(acc, buffer, strlen(buffer), 0);
+	pid_t parent_pid = getpid();
+	pid_t pid = fork();
+	if (pid == -1) {
+		perror("unable to fork");
+		close(acc);
+		return -1;
 	}
 
+	if (pid == 0) {
+		if (receive_to_stdout(acc) == -1) {
+			close(acc);
+			return -1;
+		}
+
+		kill(parent_pid, SIGTERM);
+		close(acc);
+		return 0;
+	}
+
+	if (send_from_stdin(acc) == -1) {
+		close(acc);
+		kill(pid, SIGTERM);
+		waitpid(pid, NULL, 0);
+		return -1;
+	}
+
+	shutdown(acc, SHUT_RDWR);
+	kill(pid, SIGTERM);
+	waitpid(pid, NULL, 0);
+	close(acc);
 
 return 0;
 }
-
-

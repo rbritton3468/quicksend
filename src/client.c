@@ -1,15 +1,14 @@
 #include "sys/socket.h"
 #include "netinet/in.h"
 #include "stdio.h"	
+#include <signal.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
-
-
-#define BUFFER_SZ 1024
+#include "transfer.h"
 
 int client (char* addr, int port) {
-	struct sockaddr_in serverAddr, clientAddr;
-	socklen_t clientAddr_sizel = sizeof (clientAddr);
+	struct sockaddr_in serverAddr;
 
 	serverAddr.sin_family = AF_INET;
 	serverAddr.sin_port = htons((short)port);
@@ -29,16 +28,35 @@ int client (char* addr, int port) {
 		return -1;
 	}
 
+	pid_t parent_pid = getpid();
+	pid_t pid = fork();
+	if (pid == -1) {
+		perror("unable to fork");
+		close(socket_fd);
+		return -1;
+	}
 
-	char buffer[BUFFER_SZ];
-	ssize_t bytes_received;
+	if (pid == 0) {
+		if (receive_to_stdout(socket_fd) == -1) {
+			close(socket_fd);
+			return -1;
+		}
 
-	while ((bytes_received = recv(socket_fd, buffer, BUFFER_SZ, 0)) > 0) {
-    		// Write received data directly to stdout (file descriptor 1)
-    		write(STDOUT_FILENO, buffer, bytes_received);
-	}	
+		kill(parent_pid, SIGTERM);
+		close(socket_fd);
+		return 0;
+	}
+
+	if (send_from_stdin(socket_fd) == -1) {
+		close(socket_fd);
+		kill(pid, SIGTERM);
+		waitpid(pid, NULL, 0);
+		return -1;
+	}
+
+	shutdown(socket_fd, SHUT_RDWR);
+	kill(pid, SIGTERM);
+	waitpid(pid, NULL, 0);
 	close(socket_fd);
 return 0;
 }
-
-
