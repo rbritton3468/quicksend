@@ -14,7 +14,7 @@ if (argc == 2) {//case: server
 	return client(argv[1], atoi(argv[2]));
 
 } else {
-	printf("usage: \n1. server: quicksend <port> \n2. client: quicksend <server IP> <server port>\n");
+	printf("usage: \n1. server: quicksend <port> \n2. client: quicksend <server host name> <server port>\n");
 }
 
 
