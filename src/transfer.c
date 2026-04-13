@@ -2,6 +2,7 @@
 
 #include <sys/socket.h>
 #include <unistd.h>
+#include <signal.h>
 
 static int write_all(int fd, const char *buffer, ssize_t buffer_size) {
 	ssize_t total_written = 0;
@@ -21,7 +22,7 @@ static int send_all(int socket_fd, const char *buffer, ssize_t buffer_size) {
 	ssize_t total_sent = 0;
 
 	while (total_sent < buffer_size) {
-		ssize_t bytes_sent = send(socket_fd, buffer + total_sent, buffer_size - total_sent, 0);
+		ssize_t bytes_sent = send(socket_fd, buffer + total_sent, buffer_size - total_sent, MSG_NOSIGNAL);
 		if (bytes_sent <= 0) {
 			return -1;
 		}
@@ -32,6 +33,7 @@ static int send_all(int socket_fd, const char *buffer, ssize_t buffer_size) {
 }
 
 int send_from_stdin(int socket_fd) {
+	signal(SIGPIPE, SIG_IGN);
 	char buffer[BUFFER_SZ];
 	ssize_t bytes_read;
 
