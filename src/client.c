@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
+#include <errno.h>
 #include "transfer.h"
 
 int client (char* addr, int port) {
@@ -14,21 +15,18 @@ int client (char* addr, int port) {
 	serverAddr.sin_port = htons((short)port);
 	serverAddr.sin_addr.s_addr = inet_addr(addr);
 
-	
 	int socket_fd = socket(PF_INET, SOCK_STREAM, 0);
-	
 	if(socket_fd == -1) {
 		perror("Unaable to open socket\n");
 		return -1;
-	} 
+	}
 
-	int acc  = connect (socket_fd, (struct sockaddr *)  &serverAddr, sizeof(serverAddr));
-	if(acc == -1){
+	if (connect(socket_fd, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) == -1) {
 		perror("error accepting connection on port");
+		close(socket_fd);
 		return -1;
 	}
 
-	pid_t parent_pid = getpid();
 	pid_t pid = fork();
 	if (pid == -1) {
 		perror("unable to fork");
@@ -37,26 +35,33 @@ int client (char* addr, int port) {
 	}
 
 	if (pid == 0) {
-		if (receive_to_stdout(socket_fd) == -1) {
-			close(socket_fd);
-			return -1;
-		}
-
-		kill(parent_pid, SIGTERM);
+		int receive_rc = receive_to_stdout(socket_fd);
 		close(socket_fd);
-		return 0;
+		return receive_rc;
 	}
 
-	if (send_from_stdin(socket_fd) == -1) {
-		close(socket_fd);
-		kill(pid, SIGTERM);
-		waitpid(pid, NULL, 0);
+	int send_rc = send_from_stdin(socket_fd);
+	if (shutdown(socket_fd, SHUT_WR) == -1) {
+		perror("shutdown write side");
+	}
+
+	int status = 0;
+	int wait_rc;
+	do {
+		wait_rc = waitpid(pid, &status, 0);
+	} while (wait_rc == -1 && errno == EINTR);
+
+	close(socket_fd);
+
+	if (send_rc == -1) {
 		return -1;
 	}
+	if (wait_rc == -1) {
+		return -1;
+	}
+	if (WIFEXITED(status)) {
+		return WEXITSTATUS(status);
+	}
 
-	shutdown(socket_fd, SHUT_RDWR);
-	kill(pid, SIGTERM);
-	waitpid(pid, NULL, 0);
-	close(socket_fd);
-return 0;
+	return -1;
 }
